@@ -21,7 +21,7 @@
 #include <QInputDialog>
 #include <QTableWidget>
 #include <QDebug>
-
+#include <QHeaderView>
 
 class SimpleOpenGLView : public QOpenGLWidget {
     float x = 0, y = 0, z = 0;
@@ -212,62 +212,53 @@ private slots:
     void openSettingsDialog() {
         QDialog* dialog = new QDialog(this);
         dialog->setWindowTitle("GRBL Settings");
-        dialog->resize(500, 400);
+        dialog->resize(600, 500);
 
         QVBoxLayout* layout = new QVBoxLayout(dialog);
-        QPushButton* refreshBtn = new QPushButton("Read Settings");
-       // QTableWidget* table = new QTableWidget;
-      //  table->setColumnCount(3);
-      //  table->setHorizontalHeaderLabels({"Setting", "Value", "Description"});
-        layout->addWidget(refreshBtn);
-      //  layout->addWidget(table);
-
+        QPushButton* fetchBtn = new QPushButton("Fetch Settings");
         QPushButton* applyBtn = new QPushButton("Apply Changes");
+
+        layout->addWidget(fetchBtn);
+
+        QTableWidget* table = new QTableWidget(0, 3);
+        table->setHorizontalHeaderLabels({"Key", "Value", "Description"});
+        table->horizontalHeader()->setStretchLastSection(true);
+        layout->addWidget(table);
         layout->addWidget(applyBtn);
 
         dialog->setLayout(layout);
         dialog->show();
 
+        // Descriptions for known GRBL settings
         QMap<QString, QString> descriptions = {
-            {"$0", "Step pulse time (μs)"},
-            {"$1", "Step idle delay (ms)"},
-            {"$2", "Step port invert mask"},
-            {"$3", "Direction port invert mask"},
-            {"$4", "Step enable invert"},
-            {"$5", "Limit pins invert"},
-            {"$6", "Probe pin invert"},
-            {"$10", "Status report mask"},
-            {"$11", "Junction deviation"},
-            {"$12", "Arc tolerance"},
-            {"$13", "Report inches"},
-            {"$20", "Soft limits"},
-            {"$21", "Hard limits"},
-            {"$22", "Homing cycle"},
-            {"$30", "Max spindle speed"},
-            {"$31", "Min spindle speed"},
-            {"$32", "Laser mode"},
-            {"$100", "X steps/mm"},
-            {"$101", "Y steps/mm"},
-            {"$102", "Z steps/mm"},
-            {"$110", "X max rate (mm/min)"},
-            {"$111", "Y max rate (mm/min)"},
-            {"$112", "Z max rate (mm/min)"},
-            {"$120", "X accel (mm/s^2)"},
-            {"$121", "Y accel (mm/s^2)"},
-            {"$122", "Z accel (mm/s^2)"},
-            {"$130", "X max travel (mm)"},
-            {"$131", "Y max travel (mm)"},
+            {"$0", "Step pulse time (μs)"}, {"$1", "Step idle delay (ms)"},
+            {"$2", "Step port invert mask"}, {"$3", "Direction port invert mask"},
+            {"$4", "Step enable invert"}, {"$5", "Limit pins invert"},
+            {"$6", "Probe pin invert"}, {"$10", "Status report mask"},
+            {"$11", "Junction deviation"}, {"$12", "Arc tolerance"},
+            {"$13", "Report inches"}, {"$20", "Soft limits"},
+            {"$21", "Hard limits"}, {"$22", "Homing cycle"},
+            {"$23", "Homing direction invert"}, {"$24", "Homing feed (mm/min)"},
+            {"$25", "Homing seek (mm/min)"}, {"$26", "Homing debounce (ms)"},
+            {"$27", "Homing pull-off (mm)"}, {"$30", "Max spindle speed"},
+            {"$31", "Min spindle speed"}, {"$32", "Laser mode"},
+            {"$100", "X steps/mm"}, {"$101", "Y steps/mm"}, {"$102", "Z steps/mm"},
+            {"$110", "X max rate (mm/min)"}, {"$111", "Y max rate (mm/min)"},
+            {"$112", "Z max rate (mm/min)"}, {"$120", "X accel (mm/s^2)"},
+            {"$121", "Y accel (mm/s^2)"}, {"$122", "Z accel (mm/s^2)"},
+            {"$130", "X max travel (mm)"}, {"$131", "Y max travel (mm)"},
             {"$132", "Z max travel (mm)"}
         };
 
-        QPushButton* fetchBtn = new QPushButton("Fetch Settings");
-        layout->addWidget(fetchBtn);
+        // To store original values for comparison
+        QMap<QString, QString> originalValues;
 
-        QTableWidget* table = new QTableWidget(0, 3);
-        table->setHorizontalHeaderLabels({"Key", "Value", "Description"});
-        layout->addWidget(table);
+        // Custom sorter for settings
+        auto numericKeyLessThan = [](const QString& a, const QString& b) {
+            return a.mid(1).toInt() < b.mid(1).toInt();
+        };
 
-        connect(fetchBtn, &QPushButton::clicked, this, [=]() {
+        connect(fetchBtn, &QPushButton::clicked, this, [=]() mutable {
             table->setRowCount(0);
             QString buffer;
             QMap<QString, QString> found;
@@ -280,55 +271,60 @@ private slots:
             QMetaObject::Connection* reader = new QMetaObject::Connection;
             *reader = connect(serial, &QSerialPort::readyRead, this, [=]() mutable {
                 buffer += QString::fromUtf8(serial->readAll());
-             //   QByteArray raw = serial->readAll();
-               // qDebug() << "Raw read:" << raw;
 
-               // if (raw.isEmpty())
-               //     return;
-
-               // buffer += QString::fromUtf8(raw);
-//qDebug() << buffer;
                 if (buffer.contains("ok")) {
                     disconnect(*reader);
                     delete reader;
 
-                    // Match all $number=value pairs
                     QRegExp rx("\\$(\\d+)=([\\d\\.\\-]+)");
                     int pos = 0;
                     while ((pos = rx.indexIn(buffer, pos)) != -1) {
-                        found["$" + rx.cap(1)] = rx.cap(2);
-                        qDebug() << buffer;
+                        QString key = "$" + rx.cap(1);
+                        QString val = rx.cap(2);
+                        found[key] = val;
+                        originalValues[key] = val;
                         pos += rx.matchedLength();
                     }
 
-                    // Populate the table
-                    for (auto it = descriptions.begin(); it != descriptions.end(); ++it) {
-                        QString key = it.key();
-                        QString desc = it.value();
-                        QString val = found.contains(key) ? found[key] : "(not found)";
+                    // Sort keys
+                    QStringList sortedKeys = found.keys();
+                    std::sort(sortedKeys.begin(), sortedKeys.end(), numericKeyLessThan);
+
+                    for (const QString& key : sortedKeys) {
+                        QString desc = descriptions.value(key, "");
+                        QString val = found[key];
+
                         int row = table->rowCount();
                         table->insertRow(row);
                         table->setItem(row, 0, new QTableWidgetItem(key));
                         table->setItem(row, 1, new QTableWidgetItem(val));
                         table->setItem(row, 2, new QTableWidgetItem(desc));
+
+                        // Make value cell editable
+                        table->item(row, 1)->setFlags(table->item(row, 1)->flags() | Qt::ItemIsEditable);
                     }
 
                     statusTimer->start(500);
                 }
             });
-             connect(serial, &QSerialPort::readyRead, this, &GRBLSender::readSerial);
-        });
 
+            connect(serial, &QSerialPort::readyRead, this, &GRBLSender::readSerial);
+        });
 
         connect(applyBtn, &QPushButton::clicked, this, [=]() {
             for (int row = 0; row < table->rowCount(); ++row) {
                 QString key = table->item(row, 0)->text();
                 QString val = table->item(row, 1)->text();
-                sendCommand(key + "=" + val);
+
+                if (originalValues.contains(key) && originalValues[key] != val) {
+                    sendCommand(key + "=" + val + "\n");
+                    qDebug() << "Sent:" << key + "=" + val;
+                }
             }
-            log->append("Sent updated GRBL settings.");
+            log->append("Sent modified GRBL settings.");
         });
     }
+
 
 
     void updatePosition() {
