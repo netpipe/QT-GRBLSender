@@ -275,6 +275,8 @@ private slots:
             statusTimer->stop();
             sendCommand("$$\n");
 
+            disconnect(serial, &QSerialPort::readyRead, this, &GRBLSender::readSerial);
+
             QMetaObject::Connection* reader = new QMetaObject::Connection;
             *reader = connect(serial, &QSerialPort::readyRead, this, [=]() mutable {
                 buffer += QString::fromUtf8(serial->readAll());
@@ -314,6 +316,7 @@ private slots:
                     statusTimer->start(500);
                 }
             });
+             connect(serial, &QSerialPort::readyRead, this, &GRBLSender::readSerial);
         });
 
 
