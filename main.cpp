@@ -258,7 +258,8 @@ private slots:
             return a.mid(1).toInt() < b.mid(1).toInt();
         };
 
-        connect(fetchBtn, &QPushButton::clicked, this, [=]() mutable {
+        connect(fetchBtn, &QPushButton::clicked, this, [=, &originalValues]() {
+
             table->setRowCount(0);
             QString buffer;
             QMap<QString, QString> found;
@@ -315,7 +316,7 @@ private slots:
             for (int row = 0; row < table->rowCount(); ++row) {
                 QString key = table->item(row, 0)->text();
                 QString val = table->item(row, 1)->text();
-
+ qDebug() << key << originalValues[key] << val;
                 if (originalValues.contains(key) && originalValues[key] != val) {
                     sendCommand(key + "=" + val + "\n");
                     qDebug() << "Sent:" << key + "=" + val;
