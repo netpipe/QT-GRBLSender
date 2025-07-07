@@ -258,7 +258,7 @@ private slots:
             return a.mid(1).toInt() < b.mid(1).toInt();
         };
 
-        connect(fetchBtn, &QPushButton::clicked, this, [=, &originalValues]() {
+        connect(fetchBtn, &QPushButton::clicked, this, [=]() mutable {
 
             table->setRowCount(0);
             QString buffer;
