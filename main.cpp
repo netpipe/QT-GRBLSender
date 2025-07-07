@@ -19,6 +19,8 @@
 #include <QTextStream>
 #include <QLineEdit>
 #include <QInputDialog>
+#include <QTableWidget>
+
 class SimpleOpenGLView : public QOpenGLWidget {
     float x = 0, y = 0, z = 0;
 
@@ -126,6 +128,10 @@ public:
         connect(resumeBtn, &QPushButton::clicked, this, [=](){ paused = false; QTimer::singleShot(10, this, &GRBLSender::sendNextLine); });
         connect(recoverBtn, &QPushButton::clicked, this, &GRBLSender::recoverPosition);
 
+        QPushButton* settingsBtn = new QPushButton("Settings");
+        layout->addWidget(settingsBtn);
+        connect(settingsBtn, &QPushButton::clicked, this, &GRBLSender::openSettingsDialog);
+
         connect(sendManualBtn, &QPushButton::clicked, this, [=](){
             QString cmd = manualInput->text().trimmed();
             if (!cmd.isEmpty()) sendCommand(cmd);
@@ -199,6 +205,79 @@ private slots:
             }
         }
         if (!paused && !gcodeLines.isEmpty()) QTimer::singleShot(10, this, &GRBLSender::sendNextLine);
+    }
+
+    void openSettingsDialog() {
+        QDialog* dialog = new QDialog(this);
+        dialog->setWindowTitle("GRBL Settings");
+        dialog->resize(500, 400);
+
+        QVBoxLayout* layout = new QVBoxLayout(dialog);
+        QPushButton* refreshBtn = new QPushButton("Read Settings");
+        QTableWidget* table = new QTableWidget;
+        table->setColumnCount(3);
+        table->setHorizontalHeaderLabels({"Setting", "Value", "Description"});
+        layout->addWidget(refreshBtn);
+        layout->addWidget(table);
+
+        QPushButton* applyBtn = new QPushButton("Apply Changes");
+        layout->addWidget(applyBtn);
+
+        dialog->setLayout(layout);
+        dialog->show();
+
+        QMap<QString, QString> descriptions = {
+            {"$0", "Step pulse time"},
+            {"$1", "Step idle delay"},
+            {"$2", "Step port invert mask"},
+            {"$3", "Direction port invert mask"},
+            {"$4", "Step enable invert"},
+            {"$5", "Limit pins invert"},
+            {"$6", "Probe pin invert"},
+            {"$10", "Status report mask"},
+            {"$30", "Max spindle speed"},
+            {"$100", "X steps/mm"},
+            {"$101", "Y steps/mm"},
+            {"$102", "Z steps/mm"},
+            {"$110", "X max rate"},
+            {"$111", "Y max rate"},
+            {"$112", "Z max rate"},
+            {"$120", "X acceleration"},
+            {"$121", "Y acceleration"},
+            {"$122", "Z acceleration"},
+            // Add more as needed...
+        };
+
+        connect(refreshBtn, &QPushButton::clicked, this, [=]() {
+            table->setRowCount(0);
+            sendCommand("$$");
+            connect(serial, &QSerialPort::readyRead, this, [=]() mutable {
+                QString data = QString::fromUtf8(serial->readAll());
+                log->append("<< " + data);
+                QStringList lines = data.split("\n", QString::SkipEmptyParts);
+                for (const QString& line : lines) {
+                    QRegExp rx("^\\$(\\d+)=([\\d\\.\\-]+)");
+                    if (rx.indexIn(line.trimmed()) != -1) {
+                        QString key = "$" + rx.cap(1);
+                        QString val = rx.cap(2);
+                        int row = table->rowCount();
+                        table->insertRow(row);
+                        table->setItem(row, 0, new QTableWidgetItem(key));
+                        table->setItem(row, 1, new QTableWidgetItem(val));
+                        table->setItem(row, 2, new QTableWidgetItem(descriptions.value(key, "")));
+                    }
+                }
+            });
+        });
+
+        connect(applyBtn, &QPushButton::clicked, this, [=]() {
+            for (int row = 0; row < table->rowCount(); ++row) {
+                QString key = table->item(row, 0)->text();
+                QString val = table->item(row, 1)->text();
+                sendCommand(key + "=" + val);
+            }
+            log->append("Sent all updated settings.");
+        });
     }
 
     void updatePosition() {
