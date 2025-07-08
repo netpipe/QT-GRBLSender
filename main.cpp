@@ -57,6 +57,7 @@ class GRBLSender : public QMainWindow {
     QPushButton* pauseBtn;
     QPushButton* resumeBtn;
     QPushButton* recoverBtn;
+    QPushButton* HomeButton;
 
     QStringList gcodeLines;
     int currentLine = 0;
@@ -94,11 +95,13 @@ public:
         pauseBtn = new QPushButton("Pause");
         resumeBtn = new QPushButton("Resume");
         recoverBtn = new QPushButton("Recover Pos");
+        HomeButton = new QPushButton("Home");
         gcodeControl->addWidget(loadBtn);
         gcodeControl->addWidget(playBtn);
         gcodeControl->addWidget(pauseBtn);
         gcodeControl->addWidget(resumeBtn);
         gcodeControl->addWidget(recoverBtn);
+            gcodeControl->addWidget(HomeButton);
         layout->addLayout(gcodeControl);
 
         QHBoxLayout* manualRow = new QHBoxLayout;
@@ -119,6 +122,7 @@ public:
 
         statusTimer = new QTimer(this);
 
+        connect(HomeButton, &QPushButton::clicked, this, &GRBLSender::HomeButton2);
         connect(refreshBtn, &QPushButton::clicked, this, &GRBLSender::refreshPortList);
         connect(connectBtn, &QPushButton::clicked, this, &GRBLSender::connectSerial);
         connect(serial, &QSerialPort::readyRead, this, &GRBLSender::readSerial);
@@ -147,17 +151,19 @@ protected:
         if (!serial->isOpen()) return;
         QString cmd;
         float step = 1.0f;
-        if (event->key() == Qt::Key_W && posY + step <= maxY) {
+        if (event->key() == Qt::Key_W && posY + step <= minY) {
             posY += step; cmd = "G91 G0 Y" + QString::number(step);
-        } else if (event->key() == Qt::Key_S && posY - step >= minY) {
+        } else if (event->key() == Qt::Key_S && posY - step <= maxY) {
             posY -= step; cmd = "G91 G0 Y-" + QString::number(step);
-        } else if (event->key() == Qt::Key_A && posX - step >= minX) {
+
+        } else if (event->key() == Qt::Key_A && posX - step <= maxX) {
             posX -= step; cmd = "G91 G0 X-" + QString::number(step);
-        } else if (event->key() == Qt::Key_D && posX + step <= maxX) {
+        } else if (event->key() == Qt::Key_D && posX + step <= minX) {
             posX += step; cmd = "G91 G0 X" + QString::number(step);
-        } else if (event->key() == Qt::Key_Q && posZ + step <= maxZ) {
+
+        } else if (event->key() == Qt::Key_Q && posZ - step >= minZ) {
             posZ += step; cmd = "G91 G0 Z" + QString::number(step);
-        } else if (event->key() == Qt::Key_E && posZ - step >= minZ) {
+        } else if (event->key() == Qt::Key_E && posZ + step <= maxZ) {
             posZ -= step; cmd = "G91 G0 Z-" + QString::number(step);
         }
         if (!cmd.isEmpty()) {
@@ -191,6 +197,10 @@ private slots:
             serial->write(fullCmd.toUtf8());
             log->append(">> " + cmd);
         }
+    }
+
+    void HomeButton2 () {
+sendCommand("$H");
     }
 
     void readSerial() {
